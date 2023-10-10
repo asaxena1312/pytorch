@@ -382,6 +382,15 @@ CROSS_REF_BACKWARD_EXCLUDE_SET = {
     ("cuda", torch.float16, "nn.functional.cross_entropy"),
 }
 
+SKIP_CHECK_DECOMPOSED = {
+    # binary max gets decomposed to maximum, for which it is an alias. Therefore check_decomposed
+    # will fail for binary max tests since maximum will get called instead of binary max.
+    "max",
+    # binary min gets decomposed to minimum, for which it is an alias. Therefore check_decomposed
+    # will fail for binary min tests since minimum will get called instead of binary min.
+    "min",
+}
+
 all_decomposed = set()
 all_called = defaultdict(int)
 
@@ -441,6 +450,8 @@ core_backward_failures = {
     skip('grid_sampler_2d'),  # slow: fails with --timeout=360 secs
     xfail('lerp'),
     skip('logaddexp'),  # slow: fails with --timeout=360 secs
+    skip('max', 'binary'),  # slow: fails with --timeout=360 secs
+    skip('min', 'binary'),  # slow: fails with --timeout=360 secs
     skip('native_dropout_backward'),  # slow: fails with --timeout=360 secs
     xfail('nn.functional.binary_cross_entropy_with_logits'),
     skip('nn.functional.glu'),  # slow: fails with --timeout=360 secs
@@ -699,13 +710,14 @@ class TestDecomp(TestCase):
             return real_out_unflat
 
     def check_decomposed(self, aten_name, mode):
-        self.assertTrue(
-            any(overload_to_aten_name(c) == aten_name for c in mode.decomposed),
-            msg=(f"aten.{aten_name} was not decomposed, saw calls for: "
-                 f"{', '.join(map(str, list(mode.called)))}. If your op is  "
-                 f"CompositeImplicitAutograd you should skip this test "
-                 f"by updating CROSS_REF_EXCLUDE_SET.")
-        )
+        if aten_name not in SKIP_CHECK_DECOMPOSED:
+            self.assertTrue(
+                any(overload_to_aten_name(c) == aten_name for c in mode.decomposed),
+                msg=(f"aten.{aten_name} was not decomposed, saw calls for: "
+                     f"{', '.join(map(str, list(mode.called)))}. If your op is  "
+                     f"CompositeImplicitAutograd you should skip this test "
+                     f"by updating CROSS_REF_EXCLUDE_SET.")
+            )
 
     @skipIfTorchDynamo("Test does not work with TorchDynamo")
     def do_cross_ref(self, device, dtype, op, *, run_all):
